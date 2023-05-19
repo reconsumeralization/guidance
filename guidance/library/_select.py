@@ -41,7 +41,7 @@ async def select(variable_name="selected", options=None, logprobs=None, list_app
     token_map = pygtrie.CharTrie()
     for i,option in enumerate(options):
         token_map[option] = i
-    
+
     async def recursive_select(current_prefix):
         """ This returns a dictionary of scores for each option (keyed by the option index).
         """
@@ -62,8 +62,8 @@ async def select(variable_name="selected", options=None, logprobs=None, list_app
             logprobs_out[extension_options[0][0]] = 0 # probability of 1.0 that we will select the only valid option
             return logprobs_out
         else:
-            for i in range(len(current_prefix), min([len(o[0]) for o in extension_options])):
-                if len(set([o[0][i] for o in extension_options])) > 1:
+            for i in range(len(current_prefix), min(len(o[0]) for o in extension_options)):
+                if len({o[0][i] for o in extension_options}) > 1:
                     break
             current_prefix = extension_options[0][0][:i]
 
@@ -114,12 +114,12 @@ async def select(variable_name="selected", options=None, logprobs=None, list_app
                     logprobs_out[k] = np.log(or_prob)
 
         return logprobs_out
-        
+
     # recursively compute the logprobs for each option
     option_logprobs = await recursive_select("") 
 
     selected_option = max(option_logprobs, key=option_logprobs.get)
-    
+
     # see if we are appending to a list or not
     if list_append:
         value_list = parser.get_variable(variable_name, [])
@@ -133,10 +133,10 @@ async def select(variable_name="selected", options=None, logprobs=None, list_app
         parser.set_variable(variable_name, selected_option)
         if logprobs is not None:
             parser.set_variable(logprobs, option_logprobs)
-    
+
     if max(option_logprobs.values()) <= -1000:
         raise ValueError("No valid option generated in #select! Please post a GitHub issue since this should not happen :)")
-    
+
     partial_output(selected_option)
 
 select.is_block = True

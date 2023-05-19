@@ -45,7 +45,7 @@ class Mock(LLM):
         key = self._find_suffix_match(prompt)
         output = self.output[key]
         choices = []
-        for i in range(n):
+        for _ in range(n):
             out = output[min(self.counts[key], len(output)-1)]
             self.counts[key] += 1
             if isinstance(out, str):
@@ -53,17 +53,14 @@ class Mock(LLM):
             elif isinstance(out, dict):
                 choices.append(out)
             else:
-                raise ValueError("Invalid output type: " + str(type(out)))
+                raise ValueError(f"Invalid output type: {str(type(out))}")
 
         out = {"choices": choices}
 
-        if stream:
-            return [out]
-        else:
-            return out
+        return [out] if stream else out
         
     def role_start(self, role):
-        return "<|im_start|>"+role+"\n"
+        return f"<|im_start|>{role}" + "\n"
     
     def role_end(self, role=None):
         return "<|im_end|>"
@@ -73,7 +70,7 @@ class MockTokenizer():
         pass
 
     def encode(self, text):
-        return [s for s in text.encode("utf-8")]
+        return list(text.encode("utf-8"))
     
     def decode(self, ids):
         return "".join([chr(i) for i in ids])

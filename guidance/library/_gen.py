@@ -61,8 +61,6 @@ async def gen(variable_name="generated", stop=None, stop_regex=None, max_tokens=
     # get the parser context variables we will need
     parser = _parser_context['parser']
     next_node = _parser_context["next_node"]
-    next_next_node = _parser_context["next_next_node"]
-    prev_node = _parser_context["prev_node"]
     parser_prefix = _parser_context["parser_prefix"]
     partial_output = _parser_context["partial_output"]
 
@@ -70,7 +68,9 @@ async def gen(variable_name="generated", stop=None, stop_regex=None, max_tokens=
     if stop is None:
 
         next_text = next_node.text if next_node is not None else ""
+        prev_node = _parser_context["prev_node"]
         prev_text = prev_node.text if prev_node is not None else ""
+        next_next_node = _parser_context["next_next_node"]
         if next_next_node and next_next_node.text.startswith("{{~"):
             next_text = next_text.lstrip()
             if next_next_node and next_text == "":
@@ -84,25 +84,26 @@ async def gen(variable_name="generated", stop=None, stop_regex=None, max_tokens=
                 break
 
         # auto-detect role stop tags
-        if stop is None:
-            m = re.match(r"^{{~?/(user|assistant|system|role)~?}}.*", next_text)
-            if m:
-                stop = parser.program.llm.role_end(m.group(1))
+    if stop is None:
+        if m := re.match(
+            r"^{{~?/(user|assistant|system|role)~?}}.*", next_text
+        ):
+            stop = parser.program.llm.role_end(m[1])
 
         # auto-detect XML tag stop tokens
-        if stop is None:
-            m = re.match(r"<([^>\W]+)[^>]+>", next_text)
-            if m is not None:
-                end_tag = "</"+m.group(1)+">"
-                if next_text.startswith(end_tag):
-                    stop = end_tag
-        
-        # fall back to the next node's text
-        if stop is None:
-            stop = next_text
+    if stop is None:
+        m = re.match(r"<([^>\W]+)[^>]+>", next_text)
+        if m is not None:
+            end_tag = f"</{m[1]}>"
+            if next_text.startswith(end_tag):
+                stop = end_tag
 
-        
-        
+    # fall back to the next node's text
+    if stop is None:
+        stop = next_text
+
+
+
     if stop == "":
         stop = None
 
@@ -138,7 +139,7 @@ async def gen(variable_name="generated", stop=None, stop_regex=None, max_tokens=
 
     if n == 1:
         generated_value = prefix
-        partial_output(prefix)
+        partial_output(generated_value)
         logprobs_out = []
         if not stream_generation:
             gen_obj = [gen_obj]
@@ -146,7 +147,7 @@ async def gen(variable_name="generated", stop=None, stop_regex=None, max_tokens=
             value_list = parser.get_variable(variable_name, [])
             value_list.append("")
             if logprobs is not None:
-                logprobs_list = parser.get_variable(variable_name+"_logprobs", [])
+                logprobs_list = parser.get_variable(f"{variable_name}_logprobs", [])
                 logprobs_list.append([])
         for resp in gen_obj:
             await asyncio.sleep(0) # allow other tasks to run
@@ -164,11 +165,11 @@ async def gen(variable_name="generated", stop=None, stop_regex=None, max_tokens=
                 parser.set_variable(variable_name, value_list)
                 if logprobs is not None:
                     logprobs_list[-1] = logprobs_out
-                    parser.set_variable(variable_name+"_logprobs", logprobs_list)
+                    parser.set_variable(f"{variable_name}_logprobs", logprobs_list)
             else:
                 parser.set_variable(variable_name, generated_value)
                 if logprobs is not None:
-                    parser.set_variable(variable_name+"_logprobs", logprobs_out)
+                    parser.set_variable(f"{variable_name}_logprobs", logprobs_out)
         if hasattr(gen_obj, 'close'):
             gen_obj.close()
         generated_value += suffix
@@ -178,7 +179,7 @@ async def gen(variable_name="generated", stop=None, stop_regex=None, max_tokens=
             parser.set_variable(variable_name, value_list)
         else:
             parser.set_variable(variable_name, generated_value)
-        
+
         if parse:
             assert not hidden, "Cannot parse generated text if we are hiding the output" # TODO: fix this?
             subtree = grammar.parse(generated_value)
@@ -196,12 +197,15 @@ async def gen(variable_name="generated", stop=None, stop_regex=None, max_tokens=
             value_list = parser.get_variable(variable_name, [])
             value_list.append(generated_values)
             if logprobs is not None:
-                logprobs_list = parser.get_variable(variable_name+"_logprobs", [])
+                logprobs_list = parser.get_variable(f"{variable_name}_logprobs", [])
                 logprobs_list.append([choice["logprobs"] for choice in gen_obj["choices"]])
         else:
             parser.set_variable(variable_name, generated_values)
             if logprobs is not None:
-                parser.set_variable(variable_name+"_logprobs", [choice["logprobs"] for choice in gen_obj["choices"]])
+                parser.set_variable(
+                    f"{variable_name}_logprobs",
+                    [choice["logprobs"] for choice in gen_obj["choices"]],
+                )
 
         if not hidden:
             # TODO: we could enable the parsing to branch into multiple paths here, but for now we just complete the program with the first prefix
@@ -212,7 +216,7 @@ async def gen(variable_name="generated", stop=None, stop_regex=None, max_tokens=
             # we mostly support this so that the echo=False hiding behavior does not make multiple outputs more complicated than it needs to be in the UX
             # if echo:
             #     partial_output(generated_value) 
-            
+
             id = uuid.uuid4().hex
             l = len(generated_values)
             out = "{{!--" + f"GMARKERmany_generate_start_{not hidden}_{l}${id}$" + "--}}"

@@ -27,7 +27,7 @@ def load(guidance_file):
     elif guidance_file.startswith('http://') or guidance_file.startswith('https://'):
         return requests.get(guidance_file).text
     else:
-        raise ValueError('Invalid guidance file: %s' % guidance_file)
+        raise ValueError(f'Invalid guidance file: {guidance_file}')
     
 def chain(programs, **kwargs):
     ''' Chain together multiple programs into a single program.
@@ -43,12 +43,10 @@ def chain(programs, **kwargs):
             kwargs["program%d" % i] = program
         else:
             sig = inspect.signature(program)
-            args = ""
-            for name,_ in sig.parameters.items():
-                args += f" {name}={name}"
+            args = "".join(f" {name}={name}" for name, _ in sig.parameters.items())
             fname = find_func_name(program, kwargs)
             kwargs["program%d" % i] = Program("{{set (%s%s)}}" % (fname, args), **{fname: program})
-            # kwargs.update({f"func{i}": program})
+                    # kwargs.update({f"func{i}": program})
     return Program(new_template, **kwargs)
 
 def find_func_name(f, used_names):
@@ -56,14 +54,13 @@ def find_func_name(f, used_names):
         prefix = f.__name__.replace("<", "").replace(">", "")
     else:
         prefix = "function"
-    
+
     if prefix not in used_names:
         return prefix
-    else:
-        for i in range(100):
-            fname = f"{prefix}{i}"
-            if fname not in used_names:
-                return fname
+    for i in range(100):
+        fname = f"{prefix}{i}"
+        if fname not in used_names:
+            return fname
 
 def strip_markers(s):
     return re.sub(r"{{!--G.*?--}}", r"", s, flags=re.MULTILINE | re.DOTALL)
@@ -71,8 +68,8 @@ def strip_markers(s):
 class JupyterComm():
     def __init__(self, target_id, ipython_handle, callback=None, on_open=None, mode="register"):
         from ipykernel.comm import Comm
-        
-        self.target_name = "guidance_interface_target_"+target_id
+
+        self.target_name = f"guidance_interface_target_{target_id}"
         # print("TARGET NAME", self.target_name)
         self.callback = callback
         self.jcomm = None

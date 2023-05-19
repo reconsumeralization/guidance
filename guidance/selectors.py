@@ -112,5 +112,4 @@ class LangChain():
 
         Note that we use keyword arguments here instead of a single dictionary.
         '''
-        out = self.selector.select_examples(kwargs)
-        return out
+        return self.selector.select_examples(kwargs)

@@ -28,9 +28,4 @@ class Vicuna(LLaMA):
     
     @staticmethod
     def role_end(role):
-        if role == 'user':
-            return ''
-        elif role == 'assistant':
-            return '</s>'
-        else:
-            return ''
+        return '</s>' if role == 'assistant' else ''

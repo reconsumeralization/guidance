@@ -26,8 +26,6 @@ class MPT(Transformers):
             # MPT uses the same tokenizer as GPT-NeoX
             if tokenizer is None:
                 tokenizer = tokenizer = transformers.AutoTokenizer.from_pretrained("EleutherAI/gpt-neox-20b", device_map=device_map)
-            
-            dynamic_kwargs = {}
 
             # use triton for attention
             config = transformers.AutoConfig.from_pretrained(
@@ -39,7 +37,7 @@ class MPT(Transformers):
             if attn_impl is not None:
                 import torch
                 config.attn_config['attn_impl'] = attn_impl
-                dynamic_kwargs["torch_dtype"] = torch.bfloat16
+                dynamic_kwargs = {"torch_dtype": torch.bfloat16}
 
             # allow for a custom max_seq_len (enabled by ALiBi)
             if max_seq_len is not None:

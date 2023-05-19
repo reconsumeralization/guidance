@@ -34,10 +34,7 @@ class LLM():
         This implementation is meant to be overridden by subclasses.
         """
         
-        if asynchronous:
-            return LLMSession(self)
-        else:
-            return SyncSession(LLMSession(self))
+        return LLMSession(self) if asynchronous else SyncSession(LLMSession(self))
     
     def encode(self, string, **kwargs):
         return self._tokenizer.encode(string, **kwargs)

@@ -30,11 +30,9 @@ def set(name, value=None, hidden=None, _parser_context=None):
                     v = f'"{v}"'
             out += f" {k}={v}"
         out += ""
-        return "{{!--GMARKER_set$" + out + "$--}}"
     else:
         parser.set_variable(name, value)
         if hidden is not True:
             return value
-        else:
-            out = "{{set "+name+"=" + str(value) + "}}"
-            return "{{!--GMARKER_set$" + out + "$--}}"
+        out = "{{set "+name+"=" + str(value) + "}}"
+    return "{{!--GMARKER_set$" + out + "$--}}"

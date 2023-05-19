@@ -21,13 +21,15 @@ class DeepSpeed(Transformers):
         if isinstance(model, deepspeed.InferenceEngine):
             self.wrapped_model_obj = model
             model = model.module
-            assert len(deep_speed_kwargs) == 0, "You can't pass new deepspeed.init_inference kwargs if the passed model has already been initialized with DeepSpeed!"
+            assert (
+                not deep_speed_kwargs
+            ), "You can't pass new deepspeed.init_inference kwargs if the passed model has already been initialized with DeepSpeed!"
         else:
             self.wrapped_model_obj = None
 
         # call the standard transformers init
         super().__init__(model=model, tokenizer=tokenizer, caching=caching, token_healing=token_healing, acceleration=acceleration, temperature=temperature, device=device)
-        
+
         # wrap the underlying transformers model with DeepSpeed if still needed
         if self.wrapped_model_obj is None:
             self.wrapped_model_obj = deepspeed.init_inference(
