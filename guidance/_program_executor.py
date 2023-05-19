@@ -30,16 +30,17 @@ class ProgramExecutor():
         def replace_partial(match):
             parts = match.group(1).split(" ", 1)
             partial_name = parts[0]
-            
+
             # ,args_string = match.group(1).split(" ", 1)
             if partial_name not in program._variables:
-                raise ValueError("Partial '%s' not given in the keyword args:" % partial_name)
+                raise ValueError(f"Partial '{partial_name}' not given in the keyword args:")
             out = "{{#block '"+partial_name+"'"
             if len(parts) > 1:
-                out += " " + parts[1]
+                out += f" {parts[1]}"
             out += "}}" + program._variables[partial_name].text + "{{/block}}"
             program._variables = {**program[partial_name]._variables, **program._variables} # pull in the default vars from the partial
             return out
+
         text = re.sub(r"{{>(.*?)}}", replace_partial, program._text)
 
         # parse the program text
@@ -67,18 +68,26 @@ class ProgramExecutor():
                     end = min(len(text), m.end()+30)
                     context = text[start:end]
                     if start > 0:
-                        context = "..."+context
+                        context = f"...{context}"
                     if end < len(text):
-                        context = context+"..."
-                    raise ValueError("The guidance program is missing the opening pound (#) sign or closing slash (/) for the block level command `"+k+"` at:\n"+context) from None
-                
+                        context = f"{context}..."
+                    raise ValueError(
+                        f"The guidance program is missing the opening pound (#) sign or closing slash (/) for the block level command `{k}"
+                        + "` at:\n"
+                        + context
+                    ) from None
+
                 # look for block commands that are missing the closing tag
                 num_opens = len(re.findall(r"(^|[^\\]){{~?#\s*"+k+"(\s|}|~)", text))
                 num_closes = len(re.findall(r"(^|[^\\]){{~?/\s*"+k+"(\s|}|~)", text))
                 if num_opens > num_closes:
-                    raise ValueError("The guidance program is missing a closing tag for the block level command `"+k+"`.") from None
+                    raise ValueError(
+                        f"The guidance program is missing a closing tag for the block level command `{k}`."
+                    ) from None
                 if num_opens < num_closes:
-                    raise ValueError("The guidance program is missing an opening tag for the block level command `"+k+"`.") from None
+                    raise ValueError(
+                        f"The guidance program is missing an opening tag for the block level command `{k}`."
+                    ) from None
         
         
 

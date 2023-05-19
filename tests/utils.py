@@ -9,7 +9,7 @@ def get_openai_llm(model_name, caching=False):
 
     # we cache the models so lots of tests using the same model don't have to
     # load it over and over again
-    key = model_name+"_"+str(caching)
+    key = f"{model_name}_{str(caching)}"
     if key not in opanai_model_cache:
         opanai_model_cache[key] = guidance.llms.OpenAI(model_name, caching=caching)
     llm = opanai_model_cache[key]
@@ -27,7 +27,7 @@ def get_transformers_llm(model_name, caching=False):
 
     # we cache the models so lots of tests using the same model don't have to
     # load it over and over again
-    key = model_name+"_"+str(caching)
+    key = f"{model_name}_{str(caching)}"
     if key not in transformers_model_cache:
         transformers_model_cache[key] = guidance.llms.Transformers(model_name, caching=caching)
 

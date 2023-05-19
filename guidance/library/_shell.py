@@ -20,12 +20,12 @@ def shell(command, safe=True, _parser_context=None):
     
     partial_output = _parser_context['partial_output']
     partial_output("{{execute '"+command+"'}}")
-    
+
     # before running the command we need to get confirmation from user through keyboard input
     # this is to prevent accidental execution of commands
     if safe:
         c = ""
-        while c != "\r" and c != "\n":
+        while c not in ["\r", "\n"]:
             c = getch()
             if c == '\x03':
                 raise KeyboardInterrupt()

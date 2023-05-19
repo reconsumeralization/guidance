@@ -36,6 +36,6 @@ def load(guidance_file):
     elif guidance_file.startswith('http://') or guidance_file.startswith('https://'):
         template = requests.get(guidance_file).text
     else:
-        raise ValueError('Invalid guidance file: %s' % guidance_file)
-    
+        raise ValueError(f'Invalid guidance file: {guidance_file}')
+
     return sys.modules[__name__](template)

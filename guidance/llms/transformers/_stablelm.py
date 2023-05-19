@@ -18,7 +18,7 @@ class StableLMChat(Transformers):
 
     @staticmethod
     def role_start(role):
-        return "<|"+role.upper()+"|>"
+        return f"<|{role.upper()}|>"
     
     @staticmethod
     def role_end(role):

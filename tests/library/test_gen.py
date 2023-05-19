@@ -19,7 +19,8 @@ def test_gen_n_greater_than_one_hidden():
     llm = guidance.llms.Mock()
 
     def aggregate(best):
-        return '\n'.join(['- ' + x for x in best])
+        return '\n'.join([f'- {x}' for x in best])
+
     prompt = guidance('''The best thing about the beach is{{gen 'best' temperature=0.7 n=3 hidden=True}}
 {{aggregate best}}''', llm=llm)
     a = prompt(aggregate=aggregate)

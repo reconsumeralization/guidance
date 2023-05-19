@@ -60,14 +60,10 @@ class Transformers(LLM):
             out = self._tokenizer(string, **kwargs)
         else:
             out = self._tokenizer.encode(string, **kwargs)
-        
+
         # remove the start token when we are encoding a suffix
         if fragment:
-            if out[1] == self._tokenizer.bos_token_id: # sometime the tokenizer adds an extra start token
-                out = out[3:]
-            else:
-                out = out[2:]
-        
+            out = out[3:] if out[1] == self._tokenizer.bos_token_id else out[2:]
         return out
     
     # def role_start(self, role):
@@ -395,11 +391,13 @@ class TokenHealingLogitsProcessor():
 
         try:
             allowed_first_tokens = model.prefix_matches(last_token_str)
-            assert len(allowed_first_tokens) > 0, "Error in token healing map! No match found for: `"+last_token_str+"`"
+            assert (
+                len(allowed_first_tokens) > 0
+            ), f"Error in token healing map! No match found for: `{last_token_str}`"
         except KeyError:
             # this must be a special token outside the vocab, so we assume it does not have any valid extensions
             allowed_first_tokens = []
-        
+
         # if we have multiple possible completions past the last token, then biasing is needed
         if len(allowed_first_tokens) > 1:
             self.first_token_mask = torch.zeros(vocab_size)
@@ -407,7 +405,7 @@ class TokenHealingLogitsProcessor():
             if model.device is not None:
                 self.first_token_mask = self.first_token_mask.to(model.device)
             self.should_bias = True
-        
+
         # otherwise we have nothing to do (the last token is already unique)
         else:
             self.should_bias = False
@@ -469,11 +467,11 @@ class RegexLogitsProcessor():
             processor is performance optimized (by integrating it into the sampling/greedy process).
         """
         import torch
-        
+
         if isinstance(stop_regex, str):
             stop_regex = [stop_regex]
         self.pattern_no_stop = regex.compile(pattern)
-        self.pattern = regex.compile(pattern + "(" + "|".join(stop_regex) + ")?")
+        self.pattern = regex.compile(f"{pattern}(" + "|".join(stop_regex) + ")?")
         self.decode = decode
         self.is_greedy = is_greedy
         self.prefix_length = prefix_length
@@ -500,23 +498,22 @@ class RegexLogitsProcessor():
                 self.current_strings[i] = self.current_strings[i][self.prefix_length:]
 
         self.current_length = len(input_ids[0])
-        
+
         # compute the bias values
         self.bias_vector[:] = 0
         sort_inds = torch.argsort(scores, 1, True)
         to_bias = []
         for i in range(min(sort_inds.shape[1], self.max_consider)):
             proposed_string = (self.current_strings[0] + self.decode([sort_inds[0,i]]))[self.forced_chars:]
-            m = self.pattern.fullmatch(proposed_string, partial=True) # partial means we don't match currently but might as the string grows
-            if m:
+            if m := self.pattern.fullmatch(proposed_string, partial=True):
                 to_bias.append(int(sort_inds[0, i]))
                 if self.is_greedy:
                     break # we are done if we are doing greedy sampling and we found the top valid hit
-        
+
         # if we found no more valid tokens then we just end the sequence
         if not len(to_bias):
             to_bias = [self.eos_token_id]
-        
+
         # bias allowed tokens
         min_to_bias = float(scores[0, to_bias].min())
         bias_value = scores[0, sort_inds[0, 0]] - min_to_bias + 10 # make sure the tokens that fit the pattern have higher scores than the top value
@@ -574,12 +571,17 @@ class TransformersStreamer():
         self.llm = llm
         self.max_total_tokens = max_new_tokens + len(input_ids[0])
         coded_prompt = coded_prompt[:len(coded_prompt)-len(last_token_str)] # strip off the last token which will be regenerated
-        self.str_pos = [len(coded_prompt) + len(self.last_token_str) for i in range(len(self.input_ids))]
+        self.str_pos = [
+            len(coded_prompt) + len(self.last_token_str)
+            for _ in range(len(self.input_ids))
+        ]
         self.out_queue = queue.Queue()
-        self.sequence_pos = [len(self.input_ids[0]) for i in range(len(self.input_ids))]
-        self.generated_sequence = [[] for i in range(len(self.input_ids))]
-        self.generated_scores = [[] for i in range(len(self.input_ids))]
-        self.generated_string = [coded_prompt for i in range(len(self.input_ids))]
+        self.sequence_pos = [
+            len(self.input_ids[0]) for _ in range(len(self.input_ids))
+        ]
+        self.generated_sequence = [[] for _ in range(len(self.input_ids))]
+        self.generated_scores = [[] for _ in range(len(self.input_ids))]
+        self.generated_string = [coded_prompt for _ in range(len(self.input_ids))]
         self.prefix_cache = []
 
     def put(self, token_obj):
@@ -589,26 +591,26 @@ class TransformersStreamer():
             new_tokens = token_obj
         else:
             new_tokens = token_obj['sequences']
-        
+
 
         if isinstance(new_tokens, torch.Tensor):
             new_tokens = new_tokens.cpu()
-        
+
         # if we are given a single sequence, then make it a batch of size 1
         if len(new_tokens.shape) == 1:
             new_tokens = new_tokens.unsqueeze(0)
-        
-        
+
+
         # extract the scores if we are given them (and format them to be the same shape as the tokens)
         if self.logprobs:
             assert len(new_tokens) == 1, "logprobs are not supported for batched generation right now in guidance.llms.Transformers"
             new_scores = [x.cpu() for x in token_obj['scores']]
             len_diff = len(new_tokens[0]) - len(new_scores)
             if len_diff > 0:
-                new_scores = [None for i in range(len_diff)] + new_scores
+                new_scores = [None for _ in range(len_diff)] + new_scores
             new_scores = [new_scores]
-        
-        out = {"choices": [None for i in range(len(self.input_ids))]}
+
+        out = {"choices": [None for _ in range(len(self.input_ids))]}
         put_data = False
         for i in range(len(self.input_ids)):
             self.generated_sequence[i].extend(list(new_tokens[i]))
@@ -619,7 +621,7 @@ class TransformersStreamer():
                 display_tokens = list(self.generated_sequence[i][self.sequence_pos[i]:])
                 val = self.llm.decode(display_tokens)#[self.llm._prefix_token_id] + display_tokens)[len(self.llm._prefix_token):]
                 self.generated_string[i] += val
-                
+
                 if self.str_pos[i] < len(self.generated_string[i]):
                     
                     display_logprobs = None
@@ -632,7 +634,7 @@ class TransformersStreamer():
 
                     val = self.generated_string[i][self.str_pos[i]:]
                     finish_reason = None
-                    
+
                     # check why we stopped
                     stop_pos = len(val) + 1
                     if len(self.generated_sequence[i]) >= self.max_total_tokens:
@@ -646,8 +648,7 @@ class TransformersStreamer():
                     if self.stop_regex is not None and (finish_reason is None or len(self.input_ids) > 1):
                         stop_regex_obj = [regex.compile(s) for s in self.stop_regex]
                         for s in stop_regex_obj:
-                            m = s.search(val, partial=True)
-                            if m:
+                            if m := s.search(val, partial=True):
                                 span = m.span()
                                 if span[1] > span[0]:
                                     if m.partial: # we might be starting a stop sequence, so we can't emit anything yet
@@ -659,7 +660,7 @@ class TransformersStreamer():
                     # record the reason we stopped (if we have stopped)
                     if stop_pos <= len(val):
                         finish_reason = "stop"
-                    
+
                     if not found_partial:
                         out["choices"][i] = {
                             "text": val[:stop_pos],

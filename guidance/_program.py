@@ -74,13 +74,11 @@ class Program:
         if not isinstance(text, str):
             if callable(text):
                 sig = inspect.signature(text)
-                args = ""
-                for name,_ in sig.parameters.items():
-                    args += f" {name}={name}"
+                args = "".join(f" {name}={name}" for name, _ in sig.parameters.items())
                 fname = _utils.find_func_name(text, kwargs)
                 kwargs[fname] = text
                 text = "{{set (%s%s)}}" % (fname, args)
-        
+
         # save the given parameters
         self._text = text
         self.llm = llm or getattr(guidance, "llm", None)
@@ -93,18 +91,16 @@ class Program:
         self.await_missing = await_missing
         if self.silent == "auto":
             self.silent = not _utils.is_interactive()
-        
+
         # set our variables
         self._variables = {}
-        self._variables.update(_built_ins)
-        self._variables.update({
-            "llm": llm
-        })
+        self._variables |= _built_ins
+        self._variables["llm"] = llm
         self._variables.update(kwargs)
-        
+
         # set internal state variables
         self._id = str(uuid.uuid4())
-        
+
         self._comm = None # front end communication object
         self._executor = None # the ProgramExecutor object that is running the program
         self._last_display_update = 0 # the last time we updated the display (used for throttling updates)
@@ -125,7 +121,7 @@ class Program:
             self._ipython = get_ipython()
         except:
             self._ipython = None
-        
+
         # if we are echoing in ipython we assume we can display html
         if self._ipython and not self.silent:
             self._displaying_html = True
@@ -141,9 +137,6 @@ class Program:
         """
         if msg["event"] == "stop":
             self._executor.stop()
-        elif msg["event"] == "opened":
-            pass # we don't need to do anything here because the first time we display we'll send the html
-        pass
 
     def _ipython_display_(self):
         """ Display the program in the ipython notebook.
@@ -243,7 +236,7 @@ class Program:
         # this is always called during execution, and we only want to update the display if we are displaying
         if not self._displaying:
             return
-        
+
         # debounce the display updates
         # now = time.time()
         # log.debug(now - self._last_display_update)
@@ -251,29 +244,28 @@ class Program:
         # if last or (now - self._last_display_update > debounce_delay):
         if self._displaying_html:
             out = self._build_html(self.marked_text)
-            
+
             # clear the send queue if this is the last update
             if last and self._comm:
                 self._comm.clear_send_queue()
-            
+
             # send an update to the front end client if we have one...
-            # TODO: we would like to call `display` for the last update so NB saving works, but see https://github.com/microsoft/vscode-jupyter/issues/13243 
+            # TODO: we would like to call `display` for the last update so NB saving works, but see https://github.com/microsoft/vscode-jupyter/issues/13243
             if self._displayed and self._comm and self._comm.is_open: #(not last or self._comm.is_open):
-                log.debug(f"Updating display send message to front end")
+                log.debug("Updating display send message to front end")
                 # log.debug(out)
                 self._comm.send({"replace": out})
                 if last:
                     self._comm.send({"event": "complete"})
-            
-            # ...otherwise dump the client to the font end
+
             else:
-                log.debug(f"Updating display dump to front end")
+                log.debug("Updating display dump to front end")
                 from IPython.display import clear_output, display
                 if self._displayed:
                     clear_output(wait=True) # TODO: should use wait=True but that doesn't work in VSCode until after the April 2023 release
 
                 self._display_html(out)
-        
+
         self._last_display_update = time.time()
 
     def _display_html(self, html):
@@ -338,7 +330,11 @@ class Program:
         built_ins : bool
             If True, built-in variables will be included in the returned dictionary.
         """
-        return {k: v for k,v in self._variables.items() if built_ins or not (k in _built_ins and callable(_built_ins[k]))}
+        return {
+            k: v
+            for k, v in self._variables.items()
+            if built_ins or k not in _built_ins or not callable(_built_ins[k])
+        }
     
     @property
     def text(self):
@@ -347,10 +343,7 @@ class Program:
     
     @property
     def marked_text(self):
-        if self._executor is not None:
-            return self._executor.prefix
-        else:
-            return self._text
+        return self._executor.prefix if self._executor is not None else self._text
     
     def _build_html(self, text, last=False):
         output = text
@@ -361,7 +354,7 @@ class Program:
         def start_generate_or_select(x):
             no_echo = "echo=False" in x.group(1)
             alpha = 1.0 if no_echo else 1.0
-            
+
             # script that toggles the viisibility of the next element
             click_script = 'var e = this.nextElementSibling; if (e.style.display == "inline") { e.style.display = "none"; this.style.borderRight = "1px solid rgba(0, 165, 0, 0.25)"; } else { e.style.display = "inline"; this.style.borderRight = "0px";}'
 
@@ -371,21 +364,18 @@ class Program:
             else:
                 out = "<span style='background-color: rgba(0, 165, 0, 0.25); opacity: {}; display: inline;' title='{}'>".format(alpha, undo_html_encode(x.group(1)))
             return out
-        
+
         def start_each(x):
             no_echo = "echo=False" in x.group(1)
             alpha = 0.5 if no_echo else 1.0
             color = "rgba(165, 165, 165, 0.1)" #if "geneach" not in x.group(1) else "rgba(0, 165, 0, 0.1)"
             return "<span style='opacity: {}; display: inline; background-color: {};' title='{}'>".format(alpha, color, undo_html_encode(x.group(1)))
-        
+
         def start_block(x):
             escaped_tag = undo_html_encode(x.group(1))
-            if "hidden=True" in escaped_tag:
-                display = "inline" # none (we actively stip hidden tags right now so we don't need this until we support the UX to show hidden stuff)
-            else:
-                display = "inline"
+            display = "inline" if "hidden=True" in escaped_tag else "inline"
             return f"<span style='background-color: rgba(165, 165, 165, 0.1); display: {display};' title='{escaped_tag}'>"
-        
+
         def role_box(x):
             # name = x.group(3).lower() # standardize to lowercase for display
             # content = x.group(4)
@@ -393,19 +383,19 @@ class Program:
             content = x.group(3)
             tag_text = undo_html_encode(x.group(2))
             role_name = x.group(1)
-            
+
             # if we have a generic role tag then the role name is an attribute
             if role_name == "role":
-                role_name = re.search(r"name=([^ ]*)", tag_text).group(1)
-            
+                role_name = re.search(r"name=([^ ]*)", tag_text)[1]
+
             start_pattern = html.escape(self.llm.role_start(role_name)).replace("|", r"\|")
             end_pattern = html.escape(self.llm.role_end(role_name)).replace("|", r"\|")
 
             # strip the start and end patterns from the content
-            content = re.sub("^" + start_pattern, "", content, flags=re.DOTALL)
-            content = re.sub(end_pattern + "$", "", content, flags=re.DOTALL)
+            content = re.sub(f"^{start_pattern}", "", content, flags=re.DOTALL)
+            content = re.sub(f"{end_pattern}$", "", content, flags=re.DOTALL)
 
-            
+
             # one div that contains two divs, where the left of the two inner divs has a fixed width of 100px
             # """<div style='display: flex;'>
             #     <div style='width: 100px; border-right: 1px solid rgba(127, 127, 127, 0.2); padding-right: 5px; margin-right: 5px;'>{name}</div>
@@ -420,7 +410,7 @@ class Program:
         display_out = html.escape(output)
         # log.debug(display_out)
 
-        
+
         # start_pattern = html.escape(self.llm.role_start("(.*?)")).replace("|", r"\|")
         # end_pattern = html.escape(self.llm.role_end("(.*?)")).replace("|", r"\|")
         # display_out = re.sub(r"[\s]+({{!--.*?--}})?"+start_pattern, r"\1"+start_pattern.replace("(.*?)", r"\1").replace(r"\|", "|"), display_out, flags=re.DOTALL)
@@ -429,13 +419,13 @@ class Program:
 
         # strip out hidden blocks (might want to make a better UI for this at some point)
         display_out = re.sub(r"{{!--GMARKER_START[^}]*--}}{{!--GHIDDEN:(.*?)--}}{{!--GMARKER_END[^}]*--}}", "", display_out, flags=re.DOTALL)
-        
+
         # if we have role markers, we wrap them in special formatting
         if re.search(r"{{!--GMARKER_START_(role|system|user|assistant)", display_out) is not None:
 
             # start_pattern = html.escape(self.llm.role_start("assistant")).replace("|", r"\|").replace(r"assistant", r"([^\n]*)").replace(r"ASSISTANT", r"([^\n]*)")
             # end_pattern = html.escape(self.llm.role_end("assistant")).replace("|", r"\|").replace(r"assistant", r"([^\n]*)").replace(r"ASSISTANT", r"([^\n]*)")
-            
+
             # strip whitespace before role markers
             display_out = re.sub(r"\s*{{!--GMARKER_START_(role|system|user|assistant)\$(.*?)--}}", r"{{!--GMARKER_START_\1$\2--}}", display_out, flags=re.DOTALL)
 
@@ -448,12 +438,12 @@ class Program:
 
             # wrap unfinished role markers in nice formatting
             display_out = re.sub(r"{{!--GMARKER_START_(role|system|user|assistant)\$(.*?)--}}" + "(.*)", role_box, display_out, flags=re.DOTALL)
-        
+
         display_out = re.sub(r"(\{\{generate.*?\}\})", r"<span style='background-color: rgba(0, 165, 0, 0.25);'>\1</span>", display_out, flags=re.DOTALL)
         display_out = re.sub(r"(\{\{#select\{\{/select.*?\}\})", r"<span style='background-color: rgba(0, 165, 0, 0.25);'>\1</span>", display_out, flags=re.DOTALL)
         display_out = re.sub(r"(\{\{#each [^'\"].*?\{\{/each.*?\}\})", r"<span style='background-color: rgba(0, 138.56128016, 250.76166089, 0.25);'>\1</span>", display_out, flags=re.DOTALL)
         display_out = re.sub(r"(\{\{(?!\!)(?!generate)(?!#select)(?!#each)(?!/each)(?!/select).*?\}\})", r"<span style='background-color: rgba(0, 138.56128016, 250.76166089, 0.25);'>\1</span>", display_out, flags=re.DOTALL)
-                
+
 
         # format the generate command results
         display_out = re.sub(r"{{!--GMARKER_START_gen\$([^\$]*)\$--}}", start_generate_or_select, display_out)
@@ -483,10 +473,12 @@ cycle_IDVAL(this);'''.replace("IDVAL", id).replace("TOTALCOUNT", str(total_count
             out = f'''<div style='background: rgba(255, 255, 255, 0.0); border-radius: 4px 0px 0px 4px; border: 1px solid {color}; border-right: 0px; padding-left: 3px; padding-right: 3px; user-select: none; color: {color}; display: inline; font-weight: normal; cursor: pointer' onClick='{click_script}'>1/{total_count}</div>'''
             out += f"<div style='display: inline;' id='{id}_0'>"
             return out
+
         def click_loop_mid(id, index, echo):
             alpha = 1.0 if not echo else 0.5
             out = f"</div><div style='display: none; opacity: {alpha}' id='{id}_{index}'>"
             return out
+
         display_out = re.sub(
             r"{{!--GMARKERmany_generate_start_([^_]+)_([0-9]+)\$([^\$]*)\$--}}",
             lambda x: click_loop_start(x.group(3), int(x.group(2)), x.group(1) == "True", "rgba(0, 165, 0, 0.25)"),
@@ -515,7 +507,7 @@ cycle_IDVAL(this);'''.replace("IDVAL", id).replace("TOTALCOUNT", str(total_count
 
         # format the geneach command results
         display_out = re.sub(r"{{!--GMARKER_START_geneach\$([^\$]*)\$--}}", start_each, display_out)
-        
+
         # format the set command results
         display_out = re.sub(r"{{!--GMARKER_set\$([^\$]*)\$--}}", r"<div style='background-color: rgba(165, 165, 165, 0); border-radius: 4px 4px 4px 4px; border: 1px solid rgba(165, 165, 165, 1); border-left: 2px solid rgba(165, 165, 165, 1); border-right: 2px solid rgba(165, 165, 165, 1); padding-left: 0px; padding-right: 3px; color: rgb(165, 165, 165, 1.0); display: inline; font-weight: normal; overflow: hidden;'><div style='display: inline; background: rgba(165, 165, 165, 1); padding-right: 5px; padding-left: 4px; margin-right: 3px; color: #fff'>set</div>\1</div>", display_out)
         display_out = re.sub(r"{{!--GMARKER_START_set\$([^\$]*)\$--}}", lambda x: "<span style='display: inline;' title='{}'>".format(undo_html_encode(x.group(1))), display_out)
@@ -528,7 +520,7 @@ cycle_IDVAL(this);'''.replace("IDVAL", id).replace("TOTALCOUNT", str(total_count
         display_out = re.sub(r"{{!--GMARKER_START_block\$([^\$]*)\$--}}", start_block, display_out)
         display_out = re.sub(r"{{!--GMARKER_START_([^\$]*)\$([^\$]*)\$--}}", lambda x: "<span style='background-color: rgba(0, 138.56128016, 250.76166089, 0.25); display: inline;' title='{}'>".format(undo_html_encode(x.group(2))), display_out)
         display_out = re.sub(r"{{!--GMARKER_END_([^\$]*)\$\$--}}", "</span>", display_out)
-        
+
         # display_out = re.sub(' and (?=.* and )', ', ', display_out)
 
         # strip out comments
@@ -537,7 +529,7 @@ cycle_IDVAL(this);'''.replace("IDVAL", id).replace("TOTALCOUNT", str(total_count
         # re.sub(r"<div class='strip_leading_whitespace'")
 
         display_out = add_spaces(display_out)
-        display_out = "<pre style='margin: 0px; padding: 0px; padding-left: 8px; margin-left: -8px; border-radius: 0px; border-left: 1px solid rgba(127, 127, 127, 0.2); white-space: pre-wrap; font-family: ColfaxAI, Arial; font-size: 15px; line-height: 23px;'>"+display_out+"</pre>"
+        display_out = f"<pre style='margin: 0px; padding: 0px; padding-left: 8px; margin-left: -8px; border-radius: 0px; border-left: 1px solid rgba(127, 127, 127, 0.2); white-space: pre-wrap; font-family: ColfaxAI, Arial; font-size: 15px; line-height: 23px;'>{display_out}</pre>"
 
         return display_out
 
@@ -545,9 +537,9 @@ def add_spaces(s):
     """ This adds spaces so the browser will show leading and trailing newlines.
     """
     if s.startswith("\n"):
-        s = " " + s
+        s = f" {s}"
     if s.endswith("\n"):
-        s = s + " "
+        s = f"{s} "
     return s
 
 _built_ins = {
@@ -589,7 +581,9 @@ class DisplayThrottler():
         while True:
             await self._data_event.wait()
             now = time.time()
-            log.info("in DisplayThrottler run loop -- now: {}, last_time: {}, throttle_limit: {}".format(now, self.last_time, self.throttle_limit))
+            log.info(
+                f"in DisplayThrottler run loop -- now: {now}, last_time: {self.last_time}, throttle_limit: {self.throttle_limit}"
+            )
             if self._done or now - self.last_time >= self.throttle_limit:
                 try:
                     self.display_function(last=self._done)

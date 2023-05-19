@@ -52,10 +52,9 @@ def add_text_to_chat_mode_generator(chat_mode):
 def add_text_to_chat_mode(chat_mode):
     if isinstance(chat_mode, types.GeneratorType):
         return add_text_to_chat_mode_generator(chat_mode)
-    else:
-        for c in chat_mode['choices']:
-            c['text'] = c['message']['content']
-        return chat_mode
+    for c in chat_mode['choices']:
+        c['text'] = c['message']['content']
+    return chat_mode
         
 
         # c['text'] = f'<|im_start|>{c["message"]["role"]}\n{c["message"]["content"]}<|im_end|>'
@@ -86,11 +85,7 @@ class OpenAI(LLM):
 
         # auto detect chat completion mode
         if chat_mode == "auto":
-            if model in chat_models:
-                chat_mode = True
-            else:
-                chat_mode = False
-        
+            chat_mode = model in chat_models
         # fill in default API key value
         if token is None: # get from environment variable
             token = os.environ.get("OPENAI_API_KEY", getattr(openai, "api_key", None))
@@ -112,7 +107,7 @@ class OpenAI(LLM):
         import tiktoken
         self._tokenizer = tiktoken.get_encoding(tiktoken.encoding_for_model(model).name)
         self.chat_mode = chat_mode
-        
+
         self.model_name = model
         self.caching = caching
         self.max_retries = max_retries
@@ -142,7 +137,7 @@ class OpenAI(LLM):
 
     def role_start(self, role):
         assert self.chat_mode, "role_start() can only be used in chat mode"
-        return "<|im_start|>"+role+"\n"
+        return f"<|im_start|>{role}" + "\n"
     
     def role_end(self, role=None):
         assert self.chat_mode, "role_end() can only be used in chat mode"
@@ -231,7 +226,7 @@ class OpenAI(LLM):
         # Send a POST request and get the response
         response = requests.post(self.endpoint, headers=headers, json=data, stream=stream)
         if response.status_code != 200:
-            raise Exception("Response is not 200: " + response.text)
+            raise Exception(f"Response is not 200: {response.text}")
         if stream:
             return self._rest_stream_handler(response)
         else:
