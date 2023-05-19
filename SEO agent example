@@ -1,0 +1,83 @@
+import guidance
+import re
+
+guidance.llm = guidance.llms.OpenAI("gpt-4")
+
+class SEOAgent:
+    def __init__(self, role, seo_tools):
+        self.role = role
+        self.seo_tools = seo_tools
+        self.role_simulator = guidance('''
+        {{#system~}}
+        You are an SEO agent specializing in {{role}}
+        {{~/system}}
+
+        {{#user~}}
+        You will answer the user as an SEO agent specializing in {{role}} in the following conversation. At every step, I will provide you with the user input, as well as a comment reminding you of your instructions. Always answer as an SEO agent specializing in {{role}}.
+        {{#if first_question}}You can also start the conversation.{{/if}}
+        {{~/user}}
+
+        {{~! The assistant either starts the conversation or not, depending on if this is the first or second agent }}
+        {{#assistant~}}
+        Ok, I will follow these instructions.
+        {{#if first_question}}Let me start the conversation now:
+        {{role}}: {{first_question}}{{/if}}
+        {{~/assistant}}
+
+        {{~! Then the conversation unrolls }}
+        {{~#geneach 'conversation' stop=False}}
+        {{#user~}}
+        User: {{set 'this.input' (await 'input')}}
+        Comment: Remember, answer as an SEO agent specializing in {{role}}.
+        {{~/user}}
+
+        {{#assistant~}}
+        {{set 'this.response' (seo_tool_1 this.input)}}
+        {{set 'this.response' (seo_tool_2 this.response)}}
+        {{set 'this.response' (seo_tool_3 this.response)}}
+        {{gen 'this.response'}}
+        {{~/assistant}}
+        {{~/geneach}}''')
+
+    def start_conversation(self, first_question):
+        self.conversation = self.role_simulator(role=self.role, await_missing=True)(
+            input=first_question,
+            first_question=None
+        )
+
+    def continue_conversation(self, input_):
+        self.conversation = self.role_simulator(role=self.role, await_missing=True)(
+            input=input_,
+            first_question=None
+        )
+
+    def print_conversation(self):
+        print(self.role + ": " + self.conversation['conversation'][0]['input'])
+        for x in self.conversation['conversation'][:-1]:
+            print("User: " + x['input'])
+            print()
+            print(self.role + ": " + x['response'])
+
+# Example usage
+seo_tools = {
+    "seo_tool_1": seo_tool_1,
+    "seo_tool_2": seo_tool_2,
+    "seo_tool_3": seo_tool_3,
+    # Add your other SEO tools here
+}
+
+republican = SEOAgent('Republican', seo_tools)
+democrat = SEOAgent('Democrat', seo_tools)
+
+first_question = "What is the best strategy for improving search engine rankings?"
+republican.start_conversation(first_question)
+democrat.continue_conversation(republican.conversation["conversation"][-2]["response"].strip('Republican: '))
+
+for i in range(2):
+    republican.continue_conversation(democrat.conversation[-2]["response"].replace('Democrat: ', ''))
+    democrat.continue_conversation(republican.conversation[-2]["response"].replace('Republican: ', ''))
+
+print('Democrat: ' + first_question)
+democrat.print_conversation()
+
+
