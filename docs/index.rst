@@ -20,5 +20,7 @@ Contents
 .. toctree::
    :maxdepth: 2
 
+   Tutorials <tutorials>
    API reference <api>
    API examples <api_examples>
+   The Art of Prompt Design <art_of_prompt_design>
